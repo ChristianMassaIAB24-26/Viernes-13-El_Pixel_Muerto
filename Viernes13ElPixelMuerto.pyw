@@ -125,6 +125,29 @@ class Camera:
         self.camera = pygame.Rect(x, y, self.width, self.height)
 
 
+def dibujar_mapa_escalado(surface, mapa, entidad):
+    """Dibuja un mapa pequeño ampliado sin deformar sus proporciones."""
+    escala = min(SCREEN_WIDTH / mapa.width, SCREEN_HEIGHT / mapa.height)
+    ancho = round(mapa.width * escala)
+    alto = round(mapa.height * escala)
+    x = (SCREEN_WIDTH - ancho) // 2
+    y = (SCREEN_HEIGHT - alto) // 2
+
+    mapa_escalado = pygame.transform.scale(surface, (ancho, alto))
+    screen.blit(mapa_escalado, (x, y))
+
+    imagen_ancho = max(1, round(entidad.image.get_width() * escala))
+    imagen_alto = max(1, round(entidad.image.get_height() * escala))
+    imagen_escalada = pygame.transform.scale(
+        entidad.image, (imagen_ancho, imagen_alto)
+    )
+    posicion = (
+        x + round(entidad.rect.x * escala),
+        y + round(entidad.rect.y * escala)
+    )
+    screen.blit(imagen_escalada, posicion)
+
+
 class Player(pygame.sprite.Sprite):
     def __init__(self):
         super().__init__()
@@ -415,6 +438,8 @@ all_sprites = pygame.sprite.Group(player)
 campistas = pygame.sprite.Group()
 
 def crear_campistas(num_campistas=20):
+    for campista in campistas:
+        all_sprites.remove(campista)
     campistas.empty()
 
     if mundo_map:
@@ -438,6 +463,18 @@ def crear_campistas(num_campistas=20):
                     posicion_valida = True
                     campistas.add(enemigo)
                     all_sprites.add(enemigo)
+
+
+def iniciar_partida():
+    global current_map, current_camera, tiempo_iniciado, tiempo_restante
+
+    crear_campistas()
+    tiempo_iniciado = False
+    tiempo_restante = tiempo_total
+    current_map = casa_jason_map
+    current_camera = casa_jason_camera
+    player.cambiar_sprites("assets/personaje1")
+    player.rect.center = (casa_jason_map.width // 2, casa_jason_map.height // 2)
 
 
 casa_camera = None
@@ -560,10 +597,8 @@ while running:
             y += 50
 
         if keys[pygame.K_1]:
-            estado_actual = PANTALLA_JUEGO
-            current_map = casa_map
-            current_camera = casa_camera
-            player.rect.center = (casa_map.width // 2, casa_map.height // 2)
+            estado_actual = PANTALLA_CASA_JASON
+            iniciar_partida()
         elif keys[pygame.K_2]:
             estado_actual = PANTALLA_CONTROLES
         elif keys[pygame.K_3]:
@@ -739,7 +774,7 @@ while running:
                 current_camera = casa_jason_camera
                 player.rect.center = (casa_jason_map.width // 2, casa_jason_map.height - 200)
 
-            if len(campistas) == 0:
+            if tiempo_iniciado and len(campistas) == 0:
                 victoria_texto = TITLE_FONT.render("¡VICTORIA!", True, RED)
                 x = SCREEN_WIDTH // 2 - victoria_texto.get_width() // 2
                 screen.blit(victoria_texto, (x, SCREEN_HEIGHT // 2))
@@ -770,8 +805,7 @@ while running:
             player.update(keys, casa_jason_map.width, casa_jason_map.height)
             casa_jason_camera.update(player)
             map_surface = casa_jason_map.make_map()
-            screen.blit(map_surface, casa_jason_camera.camera.topleft)
-            screen.blit(player.image, casa_jason_camera.apply(player))
+            dibujar_mapa_escalado(map_surface, casa_jason_map, player)
 
             if tiempo_iniciado:
                 tiempo_restante -= clock.get_time()
@@ -787,11 +821,21 @@ while running:
                 coords_text = FONT.render(f"X: {player.rect.x}, Y: {player.rect.y}", True, RED)
                 screen.blit(coords_text, (20, 60))
 
-            if player.rect.bottom >= casa_jason_map.height - 50 and keys[pygame.K_e]:
+            salida_texto = FONT.render("Pulsa E para salir de la casa", True, WHITE)
+            screen.blit(
+                salida_texto,
+                (SCREEN_WIDTH // 2 - salida_texto.get_width() // 2, SCREEN_HEIGHT - 50)
+            )
+
+            if keys[pygame.K_e]:
                 estado_actual = PANTALLA_MUNDO
                 current_map = mundo_map
                 current_camera = mundo_camera
                 player.rect.center = (mundo_map.width // 2, mundo_map.height // 3 + 100)
+                if not tiempo_iniciado:
+                    crear_campistas()
+                    tiempo_iniciado = True
+                    tiempo_restante = tiempo_total
         else:
             if event.type == pygame.KEYDOWN:
                 estado_actual = PANTALLA_MUNDO
