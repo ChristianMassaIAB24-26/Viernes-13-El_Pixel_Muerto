@@ -7,7 +7,11 @@ pygame.init()
 pygame.mixer.init()
 SCREEN_WIDTH = 1280
 SCREEN_HEIGHT = 720
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+pantalla_completa = True
+screen = pygame.display.set_mode(
+    (SCREEN_WIDTH, SCREEN_HEIGHT),
+    pygame.SCALED | pygame.FULLSCREEN
+)
 pygame.display.set_caption("Viernes 13: El Pixel Muerto")
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
@@ -24,44 +28,47 @@ PANTALLA_MUNDO = 6
 PANTALLA_CASA = 7
 PANTALLA_CASA_JASON = 8
 PANTALLA_GAME_OVER = 9
+PANTALLA_PAUSA = 10
 estado_actual = PANTALLA_LOGO
+estado_anterior_pausa = PANTALLA_MUNDO
+pantalla_pausa_fondo = None
 logo_timer = 1250
 logo_image = pygame.image.load("assets/logo.png").convert_alpha()
 logo_image = pygame.transform.scale(logo_image, (SCREEN_WIDTH, SCREEN_HEIGHT))
 velocitat_animacio = 200
 musica_menu_reproduciendo = False
 
-# Variables para el cronómetro
+
 tiempo_total = 15 * 60 * 1000
 tiempo_restante = tiempo_total
 tiempo_iniciado = False
-
-# Variable para mostrar coordenadas
 mostrar_coordenadas = False
+DISTANCIA_DETECCION = 80 #Distancia a la que el jugador puede atacar a los campistas
+DISTANCIA_HUIDA = 300 #Distancia a la que los campistas comienzan a huir del jugador
 
-# Distancia para detectar cuando un campista está cerca del jugador
-DISTANCIA_DETECCION = 150
-DISTANCIA_HUIDA = 300
 
-# Lista de colisiones en el mundo
 colisiones_mundo = [
-    pygame.Rect(0, 0, 340, 340),  # Colisión superior izquierda (340x340)
+    pygame.Rect(0, 0, 340, 340),
     pygame.Rect(750, 0, 200, 150),
     pygame.Rect(745, 610, 150, 60),
     pygame.Rect(100, 870, 150, 60),
     pygame.Rect(940, 1150, 150, 60),
     pygame.Rect(1320, 810, 150, 60),
     pygame.Rect(1645, 1200, 150, 60),
-    #pygame.Rect(745, 620, 150, 100),
-    #pygame.Rect(745, 620, 150, 100),
 ]
-
-# Flag para visualizar colisiones (para depuración)
 mostrar_colisiones = False
-# Flag para visualizar colisiones de entidades
 mostrar_hitboxes = False
 
-# Clase para manejar mapas TMX
+def cambiar_modo_pantalla():
+    global screen, pantalla_completa
+
+    pantalla_completa = not pantalla_completa
+    flags = pygame.SCALED
+    if pantalla_completa:
+        flags |= pygame.FULLSCREEN
+
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), flags)
+
 class TiledMap:
     def __init__(self, filename):
         self.tmx_data = load_pygame(filename)
@@ -88,7 +95,6 @@ class TiledMap:
         except:
             return None
 
-
 class Camera:
     def __init__(self, width, height):
         self.camera = pygame.Rect(0, 0, width, height)
@@ -102,14 +108,19 @@ class Camera:
         return rect.move(self.camera.topleft)
 
     def update(self, target):
-        x = -target.rect.centerx + SCREEN_WIDTH // 2
-        y = -target.rect.centery + SCREEN_HEIGHT // 2
+        if self.width <= SCREEN_WIDTH:
+            x = (SCREEN_WIDTH - self.width) // 2
+        else:
+            x = -target.rect.centerx + SCREEN_WIDTH // 2
+            x = min(0, x)
+            x = max(SCREEN_WIDTH - self.width, x)
 
-        # Limitar el rango de la cámara para que no se salga del mapa
-        x = min(0, x)
-        y = min(0, y)
-        x = max(-(self.width - SCREEN_WIDTH), x)
-        y = max(-(self.height - SCREEN_HEIGHT), y)
+        if self.height <= SCREEN_HEIGHT:
+            y = (SCREEN_HEIGHT - self.height) // 2
+        else:
+            y = -target.rect.centery + SCREEN_HEIGHT // 2
+            y = min(0, y)
+            y = max(SCREEN_HEIGHT - self.height, y)
 
         self.camera = pygame.Rect(x, y, self.width, self.height)
 
@@ -150,7 +161,6 @@ class Player(pygame.sprite.Sprite):
         speed = 5
         moving = False
         direction_changed = False
-
         new_x = self.rect.x
         new_y = self.rect.y
         if keys[pygame.K_a]:
@@ -173,11 +183,7 @@ class Player(pygame.sprite.Sprite):
             if not direction_changed:
                 self.current_direction = 'down'
             moving = True
-
-        # Crear un rect temporal con la nueva posición para verificar colisiones
         temp_rect = pygame.Rect(new_x, new_y, self.rect.width, self.rect.height)
-
-        # Verificar colisiones si estamos en el mundo
         if colisiones:
             collision_detected = False
             for colision in colisiones:
@@ -186,10 +192,8 @@ class Player(pygame.sprite.Sprite):
                     break
 
             if collision_detected:
-                # Si hay colisión, no actualizar la posición
                 pass
             else:
-                # Si no hay colisión, actualizar la posición dentro de los límites del mapa
                 if map_width is not None and map_height is not None:
                     if 0 <= new_x <= map_width - self.rect.width:
                         self.rect.x = new_x
@@ -199,7 +203,6 @@ class Player(pygame.sprite.Sprite):
                     self.rect.x = new_x
                     self.rect.y = new_y
         else:
-            # Si no hay colisiones que revisar, actualizar normalmente
             if map_width is not None and map_height is not None:
                 if 0 <= new_x <= map_width - self.rect.width:
                     self.rect.x = new_x
@@ -239,7 +242,6 @@ class Campista(pygame.sprite.Sprite):
         self.last_update_time = pygame.time.get_ticks()
         self.sprites = self.load_sprites()
         self.image = self.sprites[self.current_direction][0]
-        
         self.rect = self.image.get_rect(topleft=(self.x, self.y))
         self.map_width = map_width
         self.map_height = map_height
@@ -263,12 +265,10 @@ class Campista(pygame.sprite.Sprite):
     def update(self, player=None, colisiones=None):
         if not self.vivo:
             return
-
         if player:
             dx = player.rect.centerx - self.rect.centerx
             dy = player.rect.centery - self.rect.centery
             distance = (dx ** 2 + dy ** 2) ** 0.5
-
             if distance < DISTANCIA_HUIDA:
                 self.huyendo = True
                 if abs(dx) > abs(dy):
@@ -288,7 +288,6 @@ class Campista(pygame.sprite.Sprite):
         else:
             self.huyendo = False
             self.cambiar_direccion()
-
         self.mover(colisiones)
         self.animar()
 
@@ -310,19 +309,13 @@ class Campista(pygame.sprite.Sprite):
             nueva_x -= velocidad_actual
         elif self.current_direction == 'right':
             nueva_x += velocidad_actual
-
-        # Crear un rect temporal con la nueva posición para verificar colisiones
         temp_rect = pygame.Rect(nueva_x, nueva_y, self.rect.width, self.rect.height)
-
-        # Verificar colisiones si hay colisiones especificadas
         collision_detected = False
         if colisiones:
             for colision in colisiones:
                 if temp_rect.colliderect(colision):
                     collision_detected = True
                     break
-
-        # Solo actualizar posición si no hay colisión y está dentro de los límites del mapa
         if not collision_detected and (0 <= nueva_x <= self.map_width - self.rect.width and
                                        0 <= nueva_y <= self.map_height - self.rect.height):
             self.x, self.y = nueva_x, nueva_y
@@ -352,7 +345,7 @@ class BarraPrecision:
         self.marker_direction = 1
         self.active = False
         self.start_time = 0
-        self.time_limit = 5000  # 5 segundos
+        self.time_limit = 3000
         self.target_pos = random.randint(50, self.width - self.target_width - 50)
 
     def start(self):
@@ -365,34 +358,22 @@ class BarraPrecision:
     def update(self):
         if not self.active:
             return False, False
-
         current_time = pygame.time.get_ticks()
         if current_time - self.start_time > self.time_limit:
             self.active = False
-            return False, True  # No éxito, tiempo agotado
-
-        # Mover el marcador
+            return False, True
         self.marker_pos += self.marker_speed * self.marker_direction
         if self.marker_pos <= 0 or self.marker_pos >= self.width:
             self.marker_direction *= -1
-
-        return False, False  # No ha pasado nada aún
+        return False, False
 
     def draw(self, screen):
         if not self.active:
             return
-
-        # Dibujar el fondo de la barra
         pygame.draw.rect(screen, WHITE, (self.x, self.y, self.width, self.height))
         pygame.draw.rect(screen, BLACK, (self.x, self.y, self.width, self.height), 2)
-
-        # Dibujar la zona objetivo (verde)
         pygame.draw.rect(screen, (0, 255, 0), (self.x + self.target_pos, self.y, self.target_width, self.height))
-
-        # Dibujar el marcador
         pygame.draw.rect(screen, RED, (self.x + self.marker_pos, self.y - 10, 5, self.height + 20))
-
-        # Mostrar tiempo restante
         tiempo_restante = max(0, self.time_limit - (pygame.time.get_ticks() - self.start_time)) // 1000 + 1
         tiempo_text = FONT.render(f"Tiempo: {tiempo_restante}", True, RED)
         screen.blit(tiempo_text, (self.x + self.width // 2 - tiempo_text.get_width() // 2, self.y - 40))
@@ -400,8 +381,6 @@ class BarraPrecision:
     def check_hit(self):
         if not self.active:
             return False
-
-        # Comprobar si el marcador está en la zona objetivo
         if self.target_pos <= self.marker_pos <= self.target_pos + self.target_width:
             self.active = False
             return True
@@ -415,30 +394,25 @@ try:
 except Exception as e:
     print(f"Error al cargar casa_map: {e}")
     casa_map = None
-
 try:
     mundo_map = TiledMap("assets/mapas/mundo.tmx")
 except Exception as e:
     print(f"Error al cargar mundo_map: {e}")
     mundo_map = None
-
 try:
     casa_jason_map = TiledMap("assets/mapas/casa_jason.tmx")
 except Exception as e:
     print(f"Error al cargar casa_jason_map: {e}")
     casa_jason_map = None
-
 try:
     gameover_image = pygame.image.load("assets/gameover.png").convert_alpha()
     gameover_image = pygame.transform.scale(gameover_image, (SCREEN_WIDTH, SCREEN_HEIGHT))
 except Exception as e:
     print(f"Error al cargar gameover_image: {e}")
     gameover_image = None
-
 player = Player()
 all_sprites = pygame.sprite.Group(player)
 campistas = pygame.sprite.Group()
-
 
 def crear_campistas(num_campistas=20):
     campistas.empty()
@@ -446,28 +420,20 @@ def crear_campistas(num_campistas=20):
     if mundo_map:
         map_width = mundo_map.width
         map_height = mundo_map.height
-
         for i in range(1, num_campistas + 1):
             posicion_valida = False
             intentos = 0
-            max_intentos = 100  # Límite para evitar bucles infinitos
-
+            max_intentos = 100 
             while not posicion_valida and intentos < max_intentos:
                 intentos += 1
                 pos_x = random.randint(100, map_width - 100)
                 pos_y = random.randint(100, map_height - 100)
-
-                # Instanciamos temporalmente el campista para obtener su rect
                 enemigo = Campista(i, pos_x, pos_y, map_width, map_height)
-
-                # Comprobamos si la hitbox toca alguna colisión del mundo
                 colisiona = False
                 for colision in colisiones_mundo:
                     if enemigo.rect.colliderect(colision):
                         colisiona = True
                         break
-
-                # Si no toca ninguna colisión, la posición es válida
                 if not colisiona:
                     posicion_valida = True
                     campistas.add(enemigo)
@@ -521,52 +487,47 @@ running = True
 while running:
     screen.fill(BLACK)
     keys = pygame.key.get_pressed()
-
-    # Procesar eventos PRIMERO
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
-
-        # Manejar la tecla P para mostrar/ocultar coordenadas
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_f:
+            cambiar_modo_pantalla()
+        if (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE and
+                estado_actual in (PANTALLA_MUNDO, PANTALLA_CASA_JASON)):
+            pantalla_pausa_fondo = screen.copy()
+            estado_anterior_pausa = estado_actual
+            estado_actual = PANTALLA_PAUSA
+        if event.type == pygame.KEYDOWN and estado_actual == PANTALLA_PAUSA:
+            if event.key == pygame.K_r:
+                estado_actual = estado_anterior_pausa
+                pantalla_pausa_fondo = None
+            elif event.key == pygame.K_q:
+                running = False
         if event.type == pygame.KEYDOWN and event.key == pygame.K_p:
             mostrar_coordenadas = not mostrar_coordenadas
-
-        # Manejar la tecla C para mostrar/ocultar colisiones (para depuración)
         if event.type == pygame.KEYDOWN and event.key == pygame.K_c:
             mostrar_colisiones = not mostrar_colisiones
-        
-        #para mostrar hitbox personajes
         if event.type == pygame.KEYDOWN and event.key == pygame.K_o:
             mostrar_hitboxes = not mostrar_hitboxes
-
-        # Iniciar la barra de precisión con la tecla K
         if event.type == pygame.KEYDOWN and event.key == pygame.K_k and estado_actual == PANTALLA_MUNDO:
             campista_objetivo = campista_cerca()
             if campista_objetivo and not barra_precision.active:
                 barra_precision.start()
-
-        # Procesar la pulsación de espacio cuando la barra está activa
         if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE and barra_precision.active:
             if barra_precision.check_hit():
-                # Éxito al matar al campista
                 campista_objetivo = campista_cerca()
                 if campista_objetivo:
                     campista_objetivo.vivo = False
                     all_sprites.remove(campista_objetivo)
                     campistas.remove(campista_objetivo)
             else:
-                # Fallo al intentar matar
                 barra_precision.active = False
-
-    # Actualizar la barra de precisión DESPUÉS de procesar eventos
     if barra_precision.active:
         exito, tiempo_agotado = barra_precision.update()
-        # Si el tiempo se agotó, desactivar la barra
         if tiempo_agotado:
             barra_precision.active = False
 
-    # Resto del bucle (manejo de diferentes pantallas)
-    # Pantalla 1: Logo
+    #Pantalla 1: Logo
     if estado_actual == PANTALLA_LOGO:
         screen.blit(logo_image, (0, 0))
         pygame.time.delay(100)
@@ -574,7 +535,7 @@ while running:
         if logo_timer <= 0:
             estado_actual = PANTALLA_MENU
 
-    # Pantalla 2: Menú principal
+    #Pantalla 2: Menú
     elif estado_actual == PANTALLA_MENU:
         if estado_actual == PANTALLA_MENU and not musica_menu_reproduciendo:
             pygame.mixer.music.load("assets/audio/menu_music.mp3")
@@ -610,7 +571,7 @@ while running:
         elif keys[pygame.K_ESCAPE]:
             running = False
 
-    # Pantalla 3: Controles
+    #Pantalla 3: Controles
     elif estado_actual == PANTALLA_CONTROLES:
         controls_text = [
             "Controles del juego:",
@@ -621,9 +582,13 @@ while running:
             "S: Mover hacia abajo",
             "D: Mover a la derecha",
             "K: Matar campista (cuando estés cerca)",
+            "F: Cambiar modo de pantalla",
+            "P: Mostrar/Ocultar coordenadas",
+            "C: Mostrar/Ocultar colisiones (depuración)",
+            "O: Mostrar/Ocultar hitboxes (depuración)",
             "Presiona 'ENTER' para regresar al menú"
         ]
-        y = 150
+        y = 120
         for text in controls_text:
             render = FONT.render(text, True, WHITE)
             x = SCREEN_WIDTH // 2 - render.get_width() // 2
@@ -633,13 +598,13 @@ while running:
         if event.type == pygame.KEYDOWN:
             estado_actual = PANTALLA_MENU
 
-    # Pantalla 4: Creditos
+    #Pantalla 4:Creditos
     elif estado_actual == PANTALLA_CREDITOS:
         rules_text = [
             "Créditos:",
             "",
             "Gráficos: Dídac Perales Cuadros",
-            "Código: Christian Massa Aiassa (También Xavi sancho Y ChatGPT)",
+            "Código: Christian Massa Aiassa (También Xavi sancho)",
             "Musica Menú: Doom",
             "Sonidos en próximas actualizaciones"
             ]
@@ -653,8 +618,9 @@ while running:
         if event.type == pygame.KEYDOWN:
             estado_actual = PANTALLA_MENU
 
-    # Pantalla 5: Juego (inicia en casa del jugador)
-    if estado_actual != PANTALLA_MENU and musica_menu_reproduciendo:
+    #Pantalla 5: Juego(inicia en casa del jugador)
+    if (estado_actual not in (PANTALLA_MENU, PANTALLA_PAUSA) and
+            musica_menu_reproduciendo):
         pygame.mixer.music.stop()
         musica_menu_reproduciendo = False
     elif estado_actual == PANTALLA_JUEGO:
@@ -663,11 +629,7 @@ while running:
             if current_camera:
                 current_camera.update(player)
                 map_surface = current_map.make_map()
-
-                # Simplemente dibujar el mapa sin escalar
                 screen.blit(map_surface, current_camera.camera.topleft)
-
-                # Dibujar el jugador
                 screen.blit(player.image, current_camera.apply(player))
 
                 if current_map == casa_map and player.rect.top <= 50:
@@ -680,10 +642,35 @@ while running:
                     tiempo_iniciado = True
                     tiempo_restante = tiempo_total
 
-                # Mostrar coordenadas del jugador si está activado
                 if mostrar_coordenadas:
                     coords_text = FONT.render(f"X: {player.rect.x}, Y: {player.rect.y}", True, RED)
                     screen.blit(coords_text, (20, 60))
+
+    #Menú de pausa
+    elif estado_actual == PANTALLA_PAUSA:
+        if pantalla_pausa_fondo:
+            screen.blit(pantalla_pausa_fondo, (0, 0))
+
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 190))
+        screen.blit(overlay, (0, 0))
+
+        pausa_texto = TITLE_FONT.render("PAUSA", True, WHITE)
+        pausa_x = SCREEN_WIDTH // 2 - pausa_texto.get_width() // 2
+        screen.blit(pausa_texto, (pausa_x, SCREEN_HEIGHT // 2 - 130))
+
+        reanudar_texto = FONT.render("R: Reanudar", True, WHITE)
+        cerrar_texto = FONT.render("Q: Cerrar juego", True, WHITE)
+        screen.blit(
+            reanudar_texto,
+            (SCREEN_WIDTH // 2 - reanudar_texto.get_width() // 2,
+             SCREEN_HEIGHT // 2 - 20)
+        )
+        screen.blit(
+            cerrar_texto,
+            (SCREEN_WIDTH // 2 - cerrar_texto.get_width() // 2,
+             SCREEN_HEIGHT // 2 + 30)
+        )
 
     # Pantalla 6: Mundo exterior
     elif estado_actual == PANTALLA_MUNDO:
