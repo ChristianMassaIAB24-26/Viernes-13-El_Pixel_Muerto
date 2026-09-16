@@ -60,6 +60,8 @@ colisiones_mundo = [
 # Flag para visualizar colisiones (para depuración)
 mostrar_colisiones = False
 
+mostrar_hitboxes = False
+
 
 # Clase para manejar mapas TMX
 class TiledMap:
@@ -517,6 +519,9 @@ while running:
         if event.type == pygame.KEYDOWN and event.key == pygame.K_c:
             mostrar_colisiones = not mostrar_colisiones
 
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_o:
+            mostrar_hitboxes = not mostrar_hitboxes
+
         # Iniciar la barra de precisión con la tecla K
         if event.type == pygame.KEYDOWN and event.key == pygame.K_k and estado_actual == PANTALLA_MUNDO:
             campista_objetivo = campista_cerca()
@@ -712,6 +717,14 @@ while running:
             if mostrar_coordenadas:
                 coords_text = FONT.render(f"X: {player.rect.x}, Y: {player.rect.y}", True, RED)
                 screen.blit(coords_text, (20, 60))
+
+            if mostrar_hitboxes:
+                # Hitbox del jugador (Verde)
+                pygame.draw.rect(screen, (0, 255, 0), mundo_camera.apply(player), 2)
+                # Hitboxes de los campistas (Amarillo)
+                for campista in campistas:
+                    if campista.vivo:
+                        pygame.draw.rect(screen, (255, 255, 0), mundo_camera.apply(campista), 2)
 
             campista_objetivo = campista_cerca()
             if campista_objetivo:
